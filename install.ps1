@@ -1,0 +1,53 @@
+# claude-investigate installer for Windows (PowerShell)
+# Copies the investigate skill into ~/.claude/skills/ so Claude Code picks it up.
+#
+# Usage (run from PowerShell):
+#   irm https://raw.githubusercontent.com/Westopoli/claude-investigate/main/install.ps1 | iex
+#
+# Or, after cloning the repo:
+#   .\install.ps1
+
+$ErrorActionPreference = "Stop"
+
+$REPO_URL = "https://github.com/Westopoli/claude-investigate"
+$SKILLS_DIR = Join-Path $env:USERPROFILE ".claude\skills"
+$SKILLS = @("investigate")
+
+Write-Host "claude-investigate -- installing to $SKILLS_DIR"
+New-Item -ItemType Directory -Force -Path $SKILLS_DIR | Out-Null
+
+# Determine source: local checkout or fresh clone.
+# $MyInvocation.MyCommand.Definition returns the pipe string when run via irm|iex,
+# not a file path — so guard against that before calling Split-Path.
+if ($MyInvocation.MyCommand.CommandType -eq 'ExternalScript') {
+    $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Definition
+} else {
+    $SCRIPT_DIR = $null  # running via iex/pipe — no local dir
+}
+if ($SCRIPT_DIR -and (Test-Path (Join-Path $SCRIPT_DIR "skills"))) {
+    $SRC = Join-Path $SCRIPT_DIR "skills"
+    Write-Host "  source: local checkout ($SRC)"
+} else {
+    $TMP = Join-Path $env:TEMP "claude-investigate-install-$([System.IO.Path]::GetRandomFileName())"
+    Write-Host "  source: cloning $REPO_URL to temp dir"
+    git clone --depth 1 $REPO_URL $TMP 2>$null
+    $SRC = Join-Path $TMP "skills"
+}
+
+foreach ($skill in $SKILLS) {
+    $dest = Join-Path $SKILLS_DIR $skill
+    if (Test-Path $dest) {
+        $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+        $backup = "${dest}.bak.$timestamp"
+        Write-Host "  ${skill}: existing install found, backing up to $(Split-Path -Leaf $backup)"
+        Move-Item $dest $backup
+    }
+    Copy-Item -Recurse (Join-Path $SRC $skill) $dest
+    Write-Host "  ${skill}: installed"
+}
+
+if ($TMP) { Remove-Item -Recurse -Force $TMP -ErrorAction SilentlyContinue }
+
+Write-Host ""
+Write-Host "Done. Restart Claude Code, then try:"
+Write-Host "  /investigate"
